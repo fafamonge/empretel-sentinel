@@ -70,7 +70,16 @@ fi
 # shellcheck disable=SC1090
 source "${PROVIDER_FILE}"
 
-FULL_MESSAGE="${ICON} *${NODE_NAME}*
+EVENT_TIMESTAMP="$(sentinel_timestamp)"
+EVENT_ID="$(sentinel_event_id)"
+NODE_DISPLAY="${NODE_NAME^^}"
+LEVEL_DISPLAY="${LEVEL^^}"
+
+FULL_MESSAGE="${ICON} *${LEVEL_DISPLAY}*
+
+Node: ${NODE_DISPLAY}
+Timestamp: ${EVENT_TIMESTAMP}
+Event ID: ${EVENT_ID}
 
 ${MESSAGE}"
 

@@ -46,6 +46,12 @@ sentinel_timestamp() {
     date '+%Y-%m-%d %H:%M:%S %Z'
 }
 
+sentinel_event_id() {
+    printf '%s-%04X\n' \
+        "$(date '+%Y%m%d-%H%M%S')" \
+        "$((RANDOM % 65536))"
+}
+
 sentinel_log() {
     local component="$1"
     shift
