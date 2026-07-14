@@ -1,0 +1,21 @@
+# Copy to:
+#
+#   /etc/empretel-sentinel/services/example.conf
+
+# Supported values:
+#
+#   ok
+#   warning
+#   critical
+#   unknown
+#
+EXAMPLE_STATUS="ok"
+
+# Supported values:
+#
+#   success
+#   failed
+#   not_applicable
+#   unknown
+#
+EXAMPLE_RECOVERY_RESULT="success"

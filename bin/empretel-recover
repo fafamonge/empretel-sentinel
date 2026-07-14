@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+
+set -u
+
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+
+BASE_DIR="$(
+    cd "$(dirname "${SCRIPT_PATH}")/.." &&
+    pwd
+)"
+
+# shellcheck disable=SC1091
+source "${BASE_DIR}/lib/common.sh"
+
+usage() {
+    cat <<'USAGE'
+Usage:
+  empretel-recover <service>
+
+Recovery exit codes:
+  0  Recovery succeeded.
+  1  Recovery failed.
+  2  Recovery is not applicable.
+  3  Recovery status is unknown.
+USAGE
+}
+
+if [ "$#" -ne 1 ]; then
+    usage >&2
+    exit 2
+fi
+
+SERVICE_NAME="$1"
+
+sentinel_validate_service_name "${SERVICE_NAME}" || exit 3
+sentinel_load_config || exit 3
+sentinel_load_service_config "${SERVICE_NAME}"
+
+SERVICE_DIR="$(sentinel_service_dir "${SERVICE_NAME}")"
+RECOVERY_FILE="${SERVICE_DIR}/recover.sh"
+
+if [ ! -x "${RECOVERY_FILE}" ]; then
+    sentinel_error "Recovery plugin not found or not executable: ${RECOVERY_FILE}"
+    exit 2
+fi
+
+"${BASE_DIR}/bin/empretel-notify" \
+    warning \
+    "${SERVICE_NAME}: controlled recovery started." \
+    >/dev/null 2>&1 || true
+
+OUTPUT="$("${RECOVERY_FILE}" 2>&1)"
+STATUS=$?
+
+case "${STATUS}" in
+    0)
+        printf 'RECOVERED: %s\n' "${OUTPUT}"
+
+        sentinel_log \
+            "${SERVICE_NAME}" \
+            "Action=recover; status=recovered; message=${OUTPUT}"
+
+        "${BASE_DIR}/bin/empretel-notify" \
+            success \
+            "${SERVICE_NAME}: ${OUTPUT}" \
+            >/dev/null 2>&1 || true
+        ;;
+    1)
+        printf 'FAILED: %s\n' "${OUTPUT}" >&2
+
+        sentinel_log \
+            "${SERVICE_NAME}" \
+            "Action=recover; status=failed; message=${OUTPUT}"
+
+        "${BASE_DIR}/bin/empretel-notify" \
+            critical \
+            "${SERVICE_NAME}: recovery failed. ${OUTPUT}" \
+            >/dev/null 2>&1 || true
+        ;;
+    2)
+        printf 'NOT_APPLICABLE: %s\n' "${OUTPUT}"
+
+        sentinel_log \
+            "${SERVICE_NAME}" \
+            "Action=recover; status=not_applicable; message=${OUTPUT}"
+        ;;
+    3)
+        printf 'UNKNOWN: %s\n' "${OUTPUT}" >&2
+
+        sentinel_log \
+            "${SERVICE_NAME}" \
+            "Action=recover; status=unknown; message=${OUTPUT}"
+
+        "${BASE_DIR}/bin/empretel-notify" \
+            warning \
+            "${SERVICE_NAME}: recovery returned UNKNOWN. ${OUTPUT}" \
+            >/dev/null 2>&1 || true
+        ;;
+    *)
+        printf 'UNKNOWN: recovery returned unsupported exit status %s: %s\n' \
+            "${STATUS}" \
+            "${OUTPUT}" >&2
+
+        sentinel_log \
+            "${SERVICE_NAME}" \
+            "Action=recover; status=invalid; exit=${STATUS}; message=${OUTPUT}"
+
+        STATUS=3
+        ;;
+esac
+
+exit "${STATUS}"

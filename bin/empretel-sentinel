@@ -1,0 +1,127 @@
+#!/usr/bin/env bash
+
+set -u
+
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+
+BASE_DIR="$(
+    cd "$(dirname "${SCRIPT_PATH}")/.." &&
+    pwd
+)"
+
+# shellcheck disable=SC1091
+source "${BASE_DIR}/lib/common.sh"
+
+usage() {
+    cat <<'USAGE'
+Usage:
+  empretel-sentinel check <service>
+  empretel-sentinel list
+  empretel-sentinel help
+
+Commands:
+  check <service>  Run a service monitor.
+  list             List installed service plugins.
+  help             Show this help.
+USAGE
+}
+
+list_services() {
+    local service_dir
+
+    for service_dir in "${BASE_DIR}"/services/*; do
+        [ -d "${service_dir}" ] || continue
+        [ -x "${service_dir}/monitor.sh" ] || continue
+
+        basename "${service_dir}"
+    done
+}
+
+run_check() {
+    local service_name="$1"
+    local service_dir
+    local monitor_file
+    local output
+    local status
+    local status_name
+
+    sentinel_validate_service_name "${service_name}" || return 3
+    sentinel_load_config || return 3
+    sentinel_load_service_config "${service_name}"
+
+    service_dir="$(sentinel_service_dir "${service_name}")"
+    monitor_file="${service_dir}/monitor.sh"
+
+    if [ ! -x "${monitor_file}" ]; then
+        sentinel_error "Monitor not found or not executable: ${monitor_file}"
+        return 3
+    fi
+
+    output="$("${monitor_file}" 2>&1)"
+    status=$?
+
+    case "${status}" in
+        0|1|2|3)
+            ;;
+        *)
+            output="Monitor returned unsupported exit status ${status}: ${output}"
+            status=3
+            ;;
+    esac
+
+    status_name="$(sentinel_status_name "${status}")"
+
+    printf '%s: %s\n' "${status_name}" "${output}"
+
+    sentinel_log \
+        "${service_name}" \
+        "Action=check; status=${status_name}; message=${output}"
+
+    case "${status}" in
+        1)
+            "${BASE_DIR}/bin/empretel-notify" \
+                warning \
+                "${service_name}: ${output}" \
+                >/dev/null 2>&1 || true
+            ;;
+        2)
+            "${BASE_DIR}/bin/empretel-notify" \
+                critical \
+                "${service_name}: ${output}" \
+                >/dev/null 2>&1 || true
+            ;;
+        3)
+            "${BASE_DIR}/bin/empretel-notify" \
+                warning \
+                "${service_name}: monitor returned UNKNOWN. ${output}" \
+                >/dev/null 2>&1 || true
+            ;;
+    esac
+
+    return "${status}"
+}
+
+COMMAND="${1:-help}"
+
+case "${COMMAND}" in
+    check)
+        if [ "$#" -ne 2 ]; then
+            usage >&2
+            exit 2
+        fi
+
+        run_check "$2"
+        exit $?
+        ;;
+    list)
+        list_services
+        ;;
+    help|-h|--help)
+        usage
+        ;;
+    *)
+        sentinel_error "Unknown command: ${COMMAND}"
+        usage >&2
+        exit 2
+        ;;
+esac

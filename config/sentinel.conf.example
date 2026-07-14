@@ -1,0 +1,29 @@
+# EMPRETEL Sentinel global configuration.
+#
+# Copy this file to:
+#
+#   /etc/empretel-sentinel/sentinel.conf
+#
+# Never commit real credentials or private infrastructure information.
+
+# Human-readable node name included in notifications.
+NODE_NAME="my-server"
+
+# Notification provider located in:
+#
+#   providers/<provider>.sh
+#
+NOTIFY_PROVIDER="callmebot"
+
+# CallMeBot / WhatsApp configuration.
+#
+# Include the country code in the phone number.
+CALLMEBOT_PHONE="+503XXXXXXXX"
+CALLMEBOT_APIKEY="XXXXXXXXXX"
+
+# Runtime directories.
+LOG_DIR="/var/log/empretel-sentinel"
+STATE_DIR="/var/lib/empretel-sentinel"
+
+# Timeout used by HTTP-based providers and service plugins.
+HTTP_TIMEOUT="10"

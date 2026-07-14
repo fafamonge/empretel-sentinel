@@ -1,0 +1,29 @@
+# Local configuration and secrets
+.env
+*.env
+*.secret
+*.token
+*.key
+config/sentinel.conf
+services/*/service.conf
+
+# Runtime state
+state/
+runtime/
+*.pid
+*.lock
+
+# Logs
+logs/
+*.log
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*~
+.DS_Store
+
+# Editor and IDE metadata
+.vscode/
+.idea/
