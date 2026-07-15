@@ -80,18 +80,21 @@ run_check() {
     case "${status}" in
         1)
             "${BASE_DIR}/bin/empretel-notify" \
+                --service "${service_name}" \
                 warning \
                 "${service_name}: ${output}" \
                 >/dev/null 2>&1 || true
             ;;
         2)
             "${BASE_DIR}/bin/empretel-notify" \
+                --service "${service_name}" \
                 critical \
                 "${service_name}: ${output}" \
                 >/dev/null 2>&1 || true
             ;;
         3)
             "${BASE_DIR}/bin/empretel-notify" \
+                --service "${service_name}" \
                 warning \
                 "${service_name}: monitor returned UNKNOWN. ${output}" \
                 >/dev/null 2>&1 || true

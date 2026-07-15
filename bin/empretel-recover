@@ -45,6 +45,7 @@ if [ ! -x "${RECOVERY_FILE}" ]; then
 fi
 
 "${BASE_DIR}/bin/empretel-notify" \
+    --service "${SERVICE_NAME}" \
     warning \
     "${SERVICE_NAME}: controlled recovery started." \
     >/dev/null 2>&1 || true
@@ -61,6 +62,7 @@ case "${STATUS}" in
             "Action=recover; status=recovered; message=${OUTPUT}"
 
         "${BASE_DIR}/bin/empretel-notify" \
+            --service "${SERVICE_NAME}" \
             success \
             "${SERVICE_NAME}: ${OUTPUT}" \
             >/dev/null 2>&1 || true
@@ -73,6 +75,7 @@ case "${STATUS}" in
             "Action=recover; status=failed; message=${OUTPUT}"
 
         "${BASE_DIR}/bin/empretel-notify" \
+            --service "${SERVICE_NAME}" \
             critical \
             "${SERVICE_NAME}: recovery failed. ${OUTPUT}" \
             >/dev/null 2>&1 || true
@@ -92,6 +95,7 @@ case "${STATUS}" in
             "Action=recover; status=unknown; message=${OUTPUT}"
 
         "${BASE_DIR}/bin/empretel-notify" \
+            --service "${SERVICE_NAME}" \
             warning \
             "${SERVICE_NAME}: recovery returned UNKNOWN. ${OUTPUT}" \
             >/dev/null 2>&1 || true

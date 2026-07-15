@@ -147,10 +147,14 @@ Providers are stored in:
 providers/
 ```
 
-The active provider is selected with:
+The notification providers are configured with:
 
 ```bash
-NOTIFY_PROVIDER="callmebot"
+# One provider
+NOTIFY_PROVIDERS="callmebot-whatsapp"
+
+# Multiple providers
+NOTIFY_PROVIDERS="callmebot-whatsapp,callmebot-telegram,smtp"
 ```
 
 ---
@@ -162,7 +166,6 @@ Each monitored service lives in:
 ```text
 services/<service>/
 ```
-
 A plugin normally contains:
 
 ```text

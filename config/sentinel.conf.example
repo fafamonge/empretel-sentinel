@@ -9,11 +9,8 @@
 # Human-readable node name included in notifications.
 NODE_NAME="my-server"
 
-# Notification provider located in:
-#
-#   providers/<provider>.sh
-#
-NOTIFY_PROVIDER="callmebot"
+# Comma-separated notification providers.
+NOTIFY_PROVIDERS="callmebot-whatsapp,callmebot-telegram,smtp"
 
 # CallMeBot / WhatsApp configuration.
 #
@@ -27,3 +24,27 @@ STATE_DIR="/var/lib/empretel-sentinel"
 
 # Timeout used by HTTP-based providers and service plugins.
 HTTP_TIMEOUT="10"
+
+# Duplicate and rate-limit protection.
+NOTIFY_COOLDOWN_SECONDS="900"
+NOTIFY_WINDOW_SECONDS="3600"
+NOTIFY_MAX_EVENTS="10"
+
+# CallMeBot Telegram.
+CALLMEBOT_TELEGRAM_USERS="@myusername"
+
+# Authenticated SMTP.
+SMTP_HOST="mail.example.com"
+SMTP_PORT="587"
+SMTP_SECURITY="starttls"
+SMTP_USERNAME="sentinel@example.com"
+SMTP_PASSWORD="XXXXXXXXXX"
+SMTP_FROM_ADDRESS="sentinel@example.com"
+SMTP_FROM="EMPRETEL Sentinel <sentinel@example.com>"
+SMTP_TO="admin@example.com"
+SMTP_TIMEOUT="20"
+SMTP_TLS_INSECURE="0"
+
+# Recovery safeguards.
+RECOVERY_MAX_ATTEMPTS="3"
+RECOVERY_RESET_SECONDS="3600"

@@ -9,24 +9,64 @@ BASE_DIR="$(
     pwd
 )"
 
-# shellcheck disable=SC1091
 source "${BASE_DIR}/lib/common.sh"
 
 usage() {
     cat <<'USAGE'
 Usage:
-  empretel-notify <level> <message>
+  empretel-notify [options] <level> <message>
+
+Options:
+  --service <name>       Service or component name.
+  --detail-file <path>   Optional detailed TXT attachment for SMTP.
+  --force                Bypass cooldown and rate limits.
+  --help                 Show this help.
 
 Levels:
   info
   success
   warning
   critical
-
-Example:
-  empretel-notify success "Service recovered successfully."
 USAGE
 }
+
+SERVICE_NAME="general"
+DETAIL_FILE=""
+FORCE_NOTIFICATION="0"
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --service)
+            [ "$#" -ge 2 ] || {
+                usage >&2
+                exit 2
+            }
+
+            SERVICE_NAME="$2"
+            shift 2
+            ;;
+        --detail-file)
+            [ "$#" -ge 2 ] || {
+                usage >&2
+                exit 2
+            }
+
+            DETAIL_FILE="$2"
+            shift 2
+            ;;
+        --force)
+            FORCE_NOTIFICATION="1"
+            shift
+            ;;
+        --help|-h)
+            usage
+            exit 0
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
 
 if [ "$#" -lt 2 ]; then
     usage >&2
@@ -35,7 +75,6 @@ fi
 
 LEVEL="$1"
 shift
-
 MESSAGE="$*"
 
 case "${LEVEL}" in
@@ -53,54 +92,203 @@ case "${LEVEL}" in
         ;;
     *)
         sentinel_error "Unsupported notification level: ${LEVEL}"
-        usage >&2
         exit 2
         ;;
 esac
 
-sentinel_load_config
-
-PROVIDER_FILE="${BASE_DIR}/providers/${NOTIFY_PROVIDER}.sh"
-
-if [ ! -r "${PROVIDER_FILE}" ]; then
-    sentinel_error "Notification provider not found: ${PROVIDER_FILE}"
-    exit 1
+if [ -n "${DETAIL_FILE}" ] && [ ! -r "${DETAIL_FILE}" ]; then
+    sentinel_error "Detail file is not readable: ${DETAIL_FILE}"
+    exit 2
 fi
 
-# shellcheck disable=SC1090
-source "${PROVIDER_FILE}"
+sentinel_load_config
+
+NODE_DISPLAY="${NODE_NAME^^}"
+SERVICE_DISPLAY="${SERVICE_NAME^^}"
+LEVEL_DISPLAY="${LEVEL^^}"
+
+NOTIFY_COOLDOWN_SECONDS="${NOTIFY_COOLDOWN_SECONDS:-900}"
+NOTIFY_WINDOW_SECONDS="${NOTIFY_WINDOW_SECONDS:-3600}"
+NOTIFY_MAX_EVENTS="${NOTIFY_MAX_EVENTS:-10}"
+
+notification_state_dir="${STATE_DIR}/notifications"
+mkdir -p "${notification_state_dir}"
+
+service_slug="$(sentinel_slug "${SERVICE_NAME}")"
+state_file="${notification_state_dir}/${service_slug}.state"
+lock_file="${notification_state_dir}/${service_slug}.lock"
+
+exec 8>"${lock_file}"
+flock 8
+
+now="$(date +%s)"
+fingerprint="$(sentinel_fingerprint "${SERVICE_NAME}|${LEVEL}|${MESSAGE}")"
+
+last_fingerprint="$(sentinel_state_value "${state_file}" LAST_FINGERPRINT)"
+last_sent_at="$(sentinel_state_value "${state_file}" LAST_SENT_AT)"
+window_started="$(sentinel_state_value "${state_file}" WINDOW_STARTED)"
+window_events="$(sentinel_state_value "${state_file}" WINDOW_EVENTS)"
+
+last_sent_at="${last_sent_at:-0}"
+window_started="${window_started:-${now}}"
+window_events="${window_events:-0}"
+
+if [ "$((now - window_started))" -ge "${NOTIFY_WINDOW_SECONDS}" ]; then
+    window_started="${now}"
+    window_events="0"
+fi
+
+if [ "${FORCE_NOTIFICATION}" != "1" ]; then
+    if [ "${fingerprint}" = "${last_fingerprint}" ] &&
+       [ "$((now - last_sent_at))" -lt "${NOTIFY_COOLDOWN_SECONDS}" ]; then
+        printf 'SUPPRESSED: duplicate notification within cooldown.\n'
+        exit 0
+    fi
+
+    if [ "${window_events}" -ge "${NOTIFY_MAX_EVENTS}" ]; then
+        printf 'SUPPRESSED: service notification limit reached.\n'
+        exit 0
+    fi
+fi
 
 EVENT_TIMESTAMP="$(sentinel_timestamp)"
 EVENT_ID="$(sentinel_event_id)"
-NODE_DISPLAY="${NODE_NAME^^}"
-LEVEL_DISPLAY="${LEVEL^^}"
 
-FULL_MESSAGE="${ICON} *${LEVEL_DISPLAY}*
+PRIMARY_SUBJECT="[${LEVEL_DISPLAY}] ${SERVICE_DISPLAY} on ${NODE_DISPLAY}"
+
+PRIMARY_MESSAGE="${ICON} *${LEVEL_DISPLAY}*
 
 Node: ${NODE_DISPLAY}
+Service: ${SERVICE_DISPLAY}
 Timestamp: ${EVENT_TIMESTAMP}
 Event ID: ${EVENT_ID}
 
 ${MESSAGE}"
 
-case "${NOTIFY_PROVIDER}" in
-    callmebot)
-        if ! RESPONSE="$(callmebot_send "${FULL_MESSAGE}")"; then
-            sentinel_log \
-                "notify" \
-                "Provider=${NOTIFY_PROVIDER}; level=${LEVEL}; result=failed; message=${MESSAGE}"
+PROVIDER_LIST="${NOTIFY_PROVIDERS}"
 
-            exit 1
-        fi
-        ;;
-    *)
-        sentinel_error "Unsupported notification provider: ${NOTIFY_PROVIDER}"
-        exit 1
-        ;;
-esac
+declare -a provider_names=()
+declare -A provider_status=()
+declare -A provider_elapsed=()
+declare -A provider_details=()
 
-sentinel_log \
-    "notify" \
-    "Provider=${NOTIFY_PROVIDER}; level=${LEVEL}; result=sent; message=${MESSAGE}"
+IFS=',' read -r -a configured_providers <<< "${PROVIDER_LIST}"
 
-printf '%s\n' "${RESPONSE}"
+success_count=0
+failure_count=0
+
+for provider_name in "${configured_providers[@]}"; do
+    provider_name="${provider_name#"${provider_name%%[![:space:]]*}"}"
+    provider_name="${provider_name%"${provider_name##*[![:space:]]}"}"
+
+    [ -n "${provider_name}" ] || continue
+
+    provider_names+=("${provider_name}")
+    provider_file="${BASE_DIR}/providers/${provider_name}/provider.sh"
+
+    if [ ! -r "${provider_file}" ]; then
+        provider_status["${provider_name}"]="FAILED"
+        provider_elapsed["${provider_name}"]="0.000 s"
+        provider_details["${provider_name}"]="Provider file not found."
+        failure_count=$((failure_count + 1))
+        continue
+    fi
+
+    unset -f provider_validate provider_send 2>/dev/null || true
+    source "${provider_file}"
+
+    started_at="$(sentinel_milliseconds)"
+
+    if ! validation_output="$(provider_validate 2>&1)"; then
+        finished_at="$(sentinel_milliseconds)"
+
+        provider_status["${provider_name}"]="FAILED"
+        provider_elapsed["${provider_name}"]="$(sentinel_elapsed "${started_at}" "${finished_at}")"
+        provider_details["${provider_name}"]="${validation_output}"
+        failure_count=$((failure_count + 1))
+        continue
+    fi
+
+    if send_output="$(
+        provider_send \
+            "${PRIMARY_SUBJECT}" \
+            "${PRIMARY_MESSAGE}" \
+            "${DETAIL_FILE}" \
+            2>&1
+    )"; then
+        finished_at="$(sentinel_milliseconds)"
+
+        provider_status["${provider_name}"]="OK"
+        provider_elapsed["${provider_name}"]="$(sentinel_elapsed "${started_at}" "${finished_at}")"
+        provider_details["${provider_name}"]="${send_output}"
+        success_count=$((success_count + 1))
+    else
+        finished_at="$(sentinel_milliseconds)"
+
+        provider_status["${provider_name}"]="FAILED"
+        provider_elapsed["${provider_name}"]="$(sentinel_elapsed "${started_at}" "${finished_at}")"
+        provider_details["${provider_name}"]="${send_output:-Provider send failed.}"
+        failure_count=$((failure_count + 1))
+    fi
+done
+
+DELIVERY_REPORT="📡 *NOTIFICATION DELIVERY REPORT*
+
+Node: ${NODE_DISPLAY}
+Service: ${SERVICE_DISPLAY}
+Timestamp: $(sentinel_timestamp)
+Event ID: ${EVENT_ID}
+
+Providers:"
+
+for provider_name in "${provider_names[@]}"; do
+    DELIVERY_REPORT="${DELIVERY_REPORT}
+${provider_name} : ${provider_status[${provider_name}]} (${provider_elapsed[${provider_name}]})"
+
+    sentinel_log \
+        "notify" \
+        "Event=${EVENT_ID}; service=${SERVICE_NAME}; provider=${provider_name}; status=${provider_status[${provider_name}]}; elapsed=${provider_elapsed[${provider_name}]}; detail=${provider_details[${provider_name}]}"
+done
+
+DELIVERY_SUBJECT="[DELIVERY] ${SERVICE_DISPLAY} event ${EVENT_ID}"
+
+for provider_name in "${provider_names[@]}"; do
+    [ "${provider_status[${provider_name}]}" = "OK" ] || continue
+
+    provider_file="${BASE_DIR}/providers/${provider_name}/provider.sh"
+
+    unset -f provider_validate provider_send 2>/dev/null || true
+    source "${provider_file}"
+
+    provider_send \
+        "${DELIVERY_SUBJECT}" \
+        "${DELIVERY_REPORT}" \
+        "" \
+        >/dev/null 2>&1 || \
+        sentinel_log \
+            "notify" \
+            "Event=${EVENT_ID}; provider=${provider_name}; delivery_report=failed"
+done
+
+window_events="$((window_events + 1))"
+
+cat > "${state_file}.tmp" <<STATE
+LAST_FINGERPRINT=${fingerprint}
+LAST_SENT_AT=${now}
+WINDOW_STARTED=${window_started}
+WINDOW_EVENTS=${window_events}
+STATE
+
+mv "${state_file}.tmp" "${state_file}"
+
+printf '%s\n' "${DELIVERY_REPORT}"
+
+if [ "${success_count}" -eq 0 ]; then
+    exit 1
+fi
+
+if [ "${failure_count}" -gt 0 ]; then
+    exit 1
+fi
+
+exit 0

@@ -27,14 +27,14 @@ sentinel_load_config() {
     source "${SENTINEL_CONFIG}"
 
     NODE_NAME="${NODE_NAME:-$(hostname -s)}"
-    NOTIFY_PROVIDER="${NOTIFY_PROVIDER:-callmebot}"
+    NOTIFY_PROVIDERS="${NOTIFY_PROVIDERS:-callmebot-whatsapp}"
     LOG_DIR="${LOG_DIR:-/var/log/empretel-sentinel}"
     STATE_DIR="${STATE_DIR:-/var/lib/empretel-sentinel}"
     HTTP_TIMEOUT="${HTTP_TIMEOUT:-10}"
 
     export \
         NODE_NAME \
-        NOTIFY_PROVIDER \
+        NOTIFY_PROVIDERS \
         LOG_DIR \
         STATE_DIR \
         HTTP_TIMEOUT
@@ -124,4 +124,47 @@ sentinel_status_name() {
             printf 'INVALID\n'
             ;;
     esac
+}
+
+sentinel_milliseconds() {
+    date '+%s%3N'
+}
+
+sentinel_elapsed() {
+    local started_at="$1"
+    local finished_at="$2"
+    local elapsed
+
+    elapsed="$((finished_at - started_at))"
+
+    printf '%d.%03d s' \
+        "$((elapsed / 1000))" \
+        "$((elapsed % 1000))"
+}
+
+sentinel_slug() {
+    printf '%s' "$1" |
+        tr '[:upper:]' '[:lower:]' |
+        sed 's/[^a-z0-9._-]/_/g'
+}
+
+sentinel_fingerprint() {
+    printf '%s' "$*" |
+        sha256sum |
+        awk '{print $1}'
+}
+
+sentinel_state_value() {
+    local state_file="$1"
+    local key="$2"
+
+    [ -r "${state_file}" ] || return 0
+
+    awk -F= -v key="${key}" '
+        $1 == key {
+            sub(/^[^=]*=/, "")
+            print
+            exit
+        }
+    ' "${state_file}"
 }
