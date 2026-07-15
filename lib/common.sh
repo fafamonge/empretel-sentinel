@@ -86,8 +86,12 @@ sentinel_load_service_config() {
     config_file="$(sentinel_service_config "${service_name}")"
 
     if [ -r "${config_file}" ]; then
+        set -a
+
         # shellcheck disable=SC1090
         source "${config_file}"
+
+        set +a
     fi
 }
 

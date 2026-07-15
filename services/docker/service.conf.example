@@ -1,0 +1,49 @@
+# Docker service plugin configuration.
+#
+# Copy to:
+#
+#   /etc/empretel-sentinel/services/docker.conf
+
+# systemd unit and Docker command.
+DOCKER_SYSTEMD_SERVICE="docker"
+DOCKER_COMMAND="docker"
+
+# Require at least one running container.
+DOCKER_REQUIRE_RUNNING_CONTAINERS="1"
+
+# Comma-separated container names that must be running.
+#
+# Example:
+#
+#   DOCKER_EXPECTED_CONTAINERS="my-app,my-database"
+#
+DOCKER_EXPECTED_CONTAINERS=""
+
+# Verify that Docker has populated its NAT chain.
+DOCKER_REQUIRE_NAT_RULES="1"
+DOCKER_IPTABLES_COMMAND="iptables"
+
+# Optional HTTP or HTTPS endpoint that depends on Docker networking.
+#
+# Leave empty to disable.
+#
+DOCKER_HEALTH_URL=""
+
+# Set to 1 when the health endpoint uses a self-signed certificate
+# or is reached through localhost with a certificate for another hostname.
+DOCKER_HEALTH_INSECURE="0"
+
+# HTTP connection and total request timeouts.
+DOCKER_HEALTH_CONNECT_TIMEOUT="5"
+DOCKER_HEALTH_MAX_TIME="10"
+
+# Maximum time allowed for Docker recovery.
+DOCKER_RECOVERY_TIMEOUT="60"
+
+# Prevent overlapping recoveries.
+DOCKER_RECOVERY_LOCK="/run/empretel-sentinel-docker-recover.lock"
+
+# Interface pattern accepted by iptables for Docker Compose bridges.
+#
+# In iptables, a trailing + acts as a wildcard.
+DOCKER_FIREWALL_INTERFACE_PATTERN="br+"

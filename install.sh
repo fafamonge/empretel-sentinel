@@ -34,15 +34,26 @@ if [ ! -e /etc/empretel-sentinel/sentinel.conf ]; then
         'Created /etc/empretel-sentinel/sentinel.conf'
 fi
 
-if [ ! -e /etc/empretel-sentinel/services/example.conf ]; then
-    install \
-        -m 600 \
-        "${BASE_DIR}/services/example/service.conf.example" \
-        /etc/empretel-sentinel/services/example.conf
+for service_config_example in \
+    "${BASE_DIR}"/services/*/service.conf.example
+do
+    [ -f "${service_config_example}" ] || continue
 
-    printf '%s\n' \
-        'Created /etc/empretel-sentinel/services/example.conf'
-fi
+    service_name="$(
+        basename "$(dirname "${service_config_example}")"
+    )"
+
+    service_config="/etc/empretel-sentinel/services/${service_name}.conf"
+
+    if [ ! -e "${service_config}" ]; then
+        install \
+            -m 600 \
+            "${service_config_example}" \
+            "${service_config}"
+
+        printf 'Created %s\n' "${service_config}"
+    fi
+done
 
 ln -sfn \
     "${BASE_DIR}/bin/empretel-sentinel" \
