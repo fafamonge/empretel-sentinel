@@ -48,10 +48,13 @@ if [ "${firewall_status}" -ne 0 ]; then
 fi
 
 if "${SCRIPT_DIR}/monitor.sh" >/dev/null 2>&1; then
-    printf 'Docker recovered by repairing firewall rules: %s' \
+    printf 'Docker recovered by repairing firewall rules only: %s' \
         "${firewall_output}"
     exit 0
 fi
+
+pre_restart_monitor_output="$("${SCRIPT_DIR}/monitor.sh" 2>&1)"
+pre_restart_monitor_status=$?
 
 if systemctl is-active --quiet "${DOCKER_SYSTEMD_SERVICE}"; then
     if ! systemctl restart "${DOCKER_SYSTEMD_SERVICE}"; then
@@ -79,9 +82,10 @@ while true; do
     if "${SCRIPT_DIR}/firewall.sh" >/dev/null 2>&1 &&
        "${SCRIPT_DIR}/monitor.sh" >/dev/null 2>&1
     then
-        printf 'Docker %s and verified healthy after %s second(s).' \
+        printf 'Docker %s and verified healthy after %s second(s). Firewall-only recovery was insufficient: %s' \
             "${recovery_action}" \
-            "${elapsed}"
+            "${elapsed}" \
+            "${pre_restart_monitor_output}"
         exit 0
     fi
 
