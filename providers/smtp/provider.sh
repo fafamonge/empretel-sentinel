@@ -35,6 +35,21 @@ provider_validate() {
         return 1
     fi
 
+    local timeout_name
+    local timeout_value
+
+    for timeout_name in         SMTP_CONNECT_TIMEOUT         SMTP_TIMEOUT         SMTP_LOW_SPEED_LIMIT         SMTP_LOW_SPEED_TIME
+    do
+        timeout_value="${!timeout_name:-}"
+
+        [ -n "${timeout_value}" ] || continue
+
+        if [[ ! "${timeout_value}" =~ ^[1-9][0-9]*$ ]]; then
+            printf '%s must be a positive integer.' "${timeout_name}"
+            return 1
+        fi
+    done
+
     printf 'Configuration valid.'
 }
 
@@ -111,7 +126,10 @@ provider_send() {
         --url "${smtp_endpoint}"
         --mail-from "${SMTP_FROM_ADDRESS}"
         --upload-file "${mail_file}"
+        --connect-timeout "${SMTP_CONNECT_TIMEOUT:-5}"
         --max-time "${SMTP_TIMEOUT:-20}"
+        --speed-limit "${SMTP_LOW_SPEED_LIMIT:-1}"
+        --speed-time "${SMTP_LOW_SPEED_TIME:-10}"
     )
 
     if [ "${SMTP_SECURITY:-starttls}" = "starttls" ]; then

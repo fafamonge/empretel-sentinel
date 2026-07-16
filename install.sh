@@ -24,16 +24,69 @@ install -d -m 755 /etc/empretel-sentinel/services
 install -d -m 755 /var/log/empretel-sentinel
 install -d -m 755 /var/lib/empretel-sentinel
 
-if [ ! -e /etc/empretel-sentinel/sentinel.conf ]; then
+CONFIG_FILE="/etc/empretel-sentinel/sentinel.conf"
+LATEST_CONFIG_VERSION="2"
+
+INSTALL_CREATED=0
+INSTALL_MIGRATED=0
+INSTALL_UPDATED=0
+
+if [ ! -e "${CONFIG_FILE}" ]; then
     install \
         -m 600 \
         "${BASE_DIR}/config/sentinel.conf.example" \
-        /etc/empretel-sentinel/sentinel.conf
+        "${CONFIG_FILE}"
 
-    printf '%s\n' \
-        'Created /etc/empretel-sentinel/sentinel.conf'
+    INSTALL_CREATED=1
+
+else
+    installed_config_version="$(
+        awk -F= '
+            $1 == "CONFIG_VERSION" {
+                gsub(/["[:space:]]/, "", $2)
+                print $2
+                exit
+            }
+        ' "${CONFIG_FILE}"
+    )"
+
+    installed_config_version="${installed_config_version:-1}"
+
+    if [[ ! "${installed_config_version}" =~ ^[0-9]+$ ]]; then
+        printf 'Invalid CONFIG_VERSION in %s: %s\n' \
+            "${CONFIG_FILE}" \
+            "${installed_config_version}" >&2
+        exit 1
+    fi
+
+    if [ "${installed_config_version}" -lt "${LATEST_CONFIG_VERSION}" ]; then
+
+        if ! grep -q '^# BEGIN OPTIONAL PROVIDERS$' "${CONFIG_FILE}"; then
+            cat \
+                "${BASE_DIR}/config/optional-providers.conf.example" \
+                >> "${CONFIG_FILE}"
+        fi
+
+        if grep -q '^CONFIG_VERSION=' "${CONFIG_FILE}"; then
+            sed -i \
+                "s/^CONFIG_VERSION=.*/CONFIG_VERSION=\"${LATEST_CONFIG_VERSION}\"/" \
+                "${CONFIG_FILE}"
+        else
+            tmp="$(mktemp)"
+
+            {
+                printf 'CONFIG_VERSION="%s"\n\n' \
+                    "${LATEST_CONFIG_VERSION}"
+                cat "${CONFIG_FILE}"
+            } > "${tmp}"
+
+            install -m 600 "${tmp}" "${CONFIG_FILE}"
+            rm -f "${tmp}"
+        fi
+
+        INSTALL_MIGRATED=1
+    fi
 fi
-
 for service_config_example in \
     "${BASE_DIR}"/services/*/service.conf.example
 do
@@ -51,7 +104,7 @@ do
             "${service_config_example}" \
             "${service_config}"
 
-        printf 'Created %s\n' "${service_config}"
+        INSTALL_UPDATED=1
     fi
 done
 
@@ -67,5 +120,12 @@ ln -sfn \
     "${BASE_DIR}/bin/empretel-recover" \
     /usr/local/sbin/empretel-recover
 
-printf '%s\n' \
-    'EMPRETEL Sentinel installed successfully.'
+if [ "${INSTALL_CREATED}" -eq 1 ]; then
+    echo "EMPRETEL Sentinel installed successfully."
+elif [ "${INSTALL_MIGRATED}" -eq 1 ]; then
+    echo "EMPRETEL Sentinel configuration upgraded successfully."
+elif [ "${INSTALL_UPDATED}" -eq 1 ]; then
+    echo "EMPRETEL Sentinel updated successfully."
+else
+    echo "EMPRETEL Sentinel is already up to date."
+fi

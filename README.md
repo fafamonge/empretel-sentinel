@@ -189,3 +189,26 @@ The first production plugin will be **AzuraCast**, implemented entirely as an ex
 ## License
 
 Released under the MIT License.
+
+---
+
+## Safety Timeouts
+
+EMPRETEL Sentinel applies explicit limits to notification operations so a
+network failure or unresponsive provider cannot block a process indefinitely.
+
+```bash
+NOTIFY_LOCK_TIMEOUT="10"
+
+SMTP_CONNECT_TIMEOUT="5"
+SMTP_TIMEOUT="20"
+SMTP_LOW_SPEED_LIMIT="1"
+SMTP_LOW_SPEED_TIME="10"
+```
+
+- `NOTIFY_LOCK_TIMEOUT` limits how long a notification waits for another
+  notification process using the same service lock.
+- `SMTP_CONNECT_TIMEOUT` limits the SMTP connection phase.
+- `SMTP_TIMEOUT` limits the complete SMTP transaction.
+- `SMTP_LOW_SPEED_TIME` aborts a stalled transfer when its speed remains below
+  `SMTP_LOW_SPEED_LIMIT`.
